@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Local clones / references
+bitaxeGamma/
+ESP-Miner/
+
+# Editor / IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+
+# Build artifacts (future-proofing)
+build/
+dist/
+
+# Firmware / binary outputs (if applicable later)
+*.bin
+*.elf
+*.hex
