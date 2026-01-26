@@ -14,3 +14,10 @@ Phase 0 – research and architecture definition.
 
 This project focuses on understanding, documentation, and
 hardware/software co-design.
+
+Controller:
+Raspberry Pi Pico 2
+
+Rationale:
+Chosen for deterministic timing, strong debugging support,
+and flexibility via PIO for custom protocols.
