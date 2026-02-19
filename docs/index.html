@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+        content="Theoretical exploration of the Bitmain BM1370 ASIC: hardware architecture, communication protocol, and firmware bring-up documentation.">
+  <title>BM1370 ASIC Theory</title>
+
+  <!-- Google Fonts: progressive enhancement; system font stack in CSS provides offline fallback -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600&display=swap">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!--
+    <header> — Semantic landmark that groups site-wide branding and
+    primary navigation. Screen readers and search engines use this to
+    identify the page's introductory content.
+  -->
+  <header class="site-header">
+    <h1>BM1370 ASIC Theory</h1>
+
+    <!--
+      <nav> — Identifies a block of navigation links. Assistive
+      technologies expose this as a navigation landmark, letting users
+      skip directly to it.
+    -->
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="#introduction">Introduction</a>
+      <a href="#specs">Specifications</a>
+      <a href="#firmware">Firmware</a>
+      <a href="#journal">Journal</a>
+    </nav>
+  </header>
+
+  <!--
+    <main> — Wraps the dominant, unique content of the page.
+    There must be only one <main> per document. It signals to
+    assistive technologies where the primary content begins.
+  -->
+  <main>
+
+    <!--
+      <section> — Groups thematically related content with its own
+      heading. Each section here represents a distinct chapter of the
+      project documentation.
+    -->
+    <section id="introduction">
+      <h2>Introduction</h2>
+
+      <p>
+        This project is a theoretical and practical exploration of the
+        <strong>Bitmain BM1370</strong>, a Bitcoin mining ASIC. The goal is to
+        bring up the chip with a minimal hardware and firmware setup and
+        demonstrate valid hash computation at low power.
+      </p>
+
+      <p>
+        The focus is on <em>understanding</em>, documentation, and
+        hardware/software co-design — not on profit-oriented mining or
+        multi-chip scaling.
+      </p>
+
+      <div class="subsection">
+        <h3>Project Scope</h3>
+        <ul>
+          <li><strong>Goal:</strong> Minimal bring-up of a single BM1370 chip with valid SHA-256 hash output.</li>
+          <li><strong>Controller:</strong> Raspberry Pi Pico 2 — chosen for deterministic timing, strong debugging support, and flexibility via PIO for custom protocols.</li>
+          <li><strong>Non-goals:</strong> Full 1.2&nbsp;TH/s performance, profit-oriented mining, multi-chip scaling.</li>
+        </ul>
+      </div>
+
+      <p>
+        Current status: <span class="status-badge">Phase 0 — Research</span>
+      </p>
+    </section>
+
+    <section id="specs">
+      <h2>Technical Specifications</h2>
+
+      <p>
+        The following specifications were gathered during Phase&nbsp;0 research,
+        primarily from community sources and the open-source
+        <a href="https://github.com/bitaxeorg/ESP-Miner" rel="noopener noreferrer">ESP-Miner</a>
+        project by Bitaxe.
+      </p>
+
+      <!--
+        <dl> (definition list) — Semantically appropriate for
+        term/description pairs such as hardware specifications.
+      -->
+      <div class="subsection">
+        <h3>Power Architecture</h3>
+        <dl>
+          <dt>Input Power</dt>
+          <dd>Supplied via a 5&nbsp;V rail, capable of delivering &gt;4&nbsp;A (accounting for conversion losses at &gt;20&nbsp;W total consumption).</dd>
+
+          <dt>Core Supply (VDD)</dt>
+          <dd>Nominal ~1.2&nbsp;V, high-current rail. Peak current reaches 15–20&nbsp;A depending on operating conditions. Reference designs use a high-current buck converter such as the TPS546D24.</dd>
+
+          <dt>IO Supply — VDDIO_12</dt>
+          <dd>Nominal ~1.2&nbsp;V, low-current rail supplying IO logic and internal support circuitry.</dd>
+
+          <dt>IO Supply — VDDIO_08</dt>
+          <dd>Nominal ~0.8&nbsp;V, low-current rail. Exact current requirements are not publicly documented.</dd>
+
+          <dt>Ground (VSS)</dt>
+          <dd>Must be connected with low-impedance paths to support high transient currents on the core rail.</dd>
+        </dl>
+      </div>
+
+      <div class="subsection">
+        <h3>Communication Interface</h3>
+        <dl>
+          <dt>Protocol</dt>
+          <dd>Proprietary, UART-like bidirectional communication over 6 signals.</dd>
+
+          <dt>Controller &rarr; ASIC (4 signals)</dt>
+          <dd><code>CI</code>, <code>BI</code>, <code>NRST</code>, <code>PIN_MODE</code></dd>
+
+          <dt>ASIC &rarr; Controller (2 signals)</dt>
+          <dd><code>CO</code>, <code>BO</code></dd>
+        </dl>
+      </div>
+
+      <div class="subsection">
+        <h3>Clocking</h3>
+        <dl>
+          <dt>External Clock</dt>
+          <dd>25&nbsp;MHz oscillator connected to <code>CLKI</code> (input) and <code>CLKO</code> (output).</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section id="firmware">
+      <h2>Firmware Implementation</h2>
+
+      <p>
+        The BM1370 communicates via framed serial packets. Two packet types
+        exist: <strong>command packets</strong> (using CRC-5 error detection)
+        and <strong>job packets</strong> (using CRC-16). The packet structure
+        follows the pattern:
+      </p>
+
+      <!--
+        <pre><code> — <pre> preserves whitespace formatting;
+        <code> marks the content as computer code. The class
+        "language-c" follows a widely-adopted convention for
+        syntax-highlighting hooks.
+      -->
+      <span class="code-label">bm1370_protocol.h</span>
+      <pre><code class="language-c">#ifndef BM1370_PROTOCOL_H
+#define BM1370_PROTOCOL_H
+
+#include &lt;stdint.h&gt;
+#include &lt;stddef.h&gt;
+
+/*
+ * BM1370 packet types
+ */
+typedef enum {
+    BM1370_PACKET_CMD,
+    BM1370_PACKET_JOB
+} bm1370_packet_type_t;
+
+/*
+ * Packet structure:
+ * [ PREAMBLE ][ HEADER ][ LENGTH ][ DATA... ][ CRC ]
+ *
+ * CMD packets use CRC5
+ * JOB packets use CRC16
+ */
+
+int bm1370_build_packet(
+    uint8_t *buffer,
+    size_t buffer_size,
+    bm1370_packet_type_t type,
+    const uint8_t *data,
+    size_t data_len
+);
+
+#endif</code></pre>
+
+      <p>
+        The implementation constructs the packet frame byte-by-byte: a
+        <code>0x55 0xAA</code> preamble, a type-dependent header, the payload
+        length, the raw data, and finally the appropriate CRC checksum.
+      </p>
+
+      <span class="code-label">bm1370_protocol.c</span>
+      <pre><code class="language-c">#include "bm1370_protocol.h"
+#include &lt;string.h&gt;
+#include &lt;stdbool.h&gt;
+#include "crc16.h"
+#include "crc5.h"
+
+int bm1370_build_packet(
+    uint8_t *buffer,
+    size_t buffer_size,
+    bm1370_packet_type_t type,
+    const uint8_t *data,
+    size_t data_len
+) {
+    size_t offset = 0;
+    size_t total_length;
+
+    if (!buffer || !data) {
+        return -1;
+    }
+
+    if (type == BM1370_PACKET_JOB) {
+        total_length = data_len + 6;
+    } else if (type == BM1370_PACKET_CMD) {
+        total_length = data_len + 5;
+    } else {
+        return -1;
+    }
+
+    if (buffer_size &lt; total_length) {
+        return -1;
+    }
+
+    /* Protocol preamble (synchronization bytes) */
+    buffer[offset++] = 0x55;
+    buffer[offset++] = 0xAA;
+
+    /* Header: 0x20 = job, 0x40 = command */
+    buffer[offset++] = (type == BM1370_PACKET_JOB) ? 0x20 : 0x40;
+
+    /* Payload length field */
+    buffer[offset++] = (type == BM1370_PACKET_JOB)
+        ? (uint8_t)(data_len + 4)
+        : (uint8_t)(data_len + 3);
+
+    /* Copy payload */
+    memcpy(&amp;buffer[offset], data, data_len);
+    offset += data_len;
+
+    /* Append error-detection checksum */
+    if (type == BM1370_PACKET_JOB) {
+        uint16_t crc16_total = crc16_false(&amp;buffer[2], data_len + 2);
+        buffer[offset++] = (crc16_total &gt;&gt; 8) &amp; 0xFF;
+        buffer[offset++] = crc16_total &amp; 0xFF;
+    } else {
+        buffer[offset++] = crc5_compute(buffer + 2, data_len + 2);
+    }
+
+    return (int)offset;
+}</code></pre>
+    </section>
+
+    <section id="journal">
+      <h2>Research Journal</h2>
+
+      <p>
+        A chronological record of research progress, findings, and open
+        questions encountered during Phase&nbsp;0.
+      </p>
+
+      <ol class="timeline">
+        <li>
+          <span class="week-label">Week 01 — Hardware Research</span>
+          Focused on understanding BM1370 basics and minimum requirements.
+          Mapped out power domains (VDD core at ~1.2&nbsp;V / 15–20&nbsp;A,
+          IO rails at 1.2&nbsp;V and 0.8&nbsp;V), identified the 6-signal
+          UART-like communication interface, and confirmed the 25&nbsp;MHz
+          external clock requirement. Identified Bitaxe as the only known
+          minimal reference design.
+        </li>
+        <li>
+          <span class="week-label">Week 02 — Protocol Analysis</span>
+          Studied the open-source
+          <a href="https://github.com/bitaxeorg/ESP-Miner" rel="noopener noreferrer">ESP-Miner</a>
+          codebase to understand the BM1370 control flow. Mapped the
+          initialization sequence, job creation pipeline, and ASIC response
+          handling. Documented the packet framing protocol (preamble, header,
+          length, data, CRC) and implemented a standalone
+          <code>bm1370_build_packet()</code> function with CRC-5 and CRC-16
+          support.
+        </li>
+      </ol>
+    </section>
+
+  </main>
+
+  <!--
+    <footer> — Semantic landmark for page-level footer content such as
+    copyright, authorship, and repository links. Assistive technologies
+    expose this as a contentinfo landmark.
+  -->
+  <footer class="site-footer">
+    <p>
+      BM1370 ASIC Theory &mdash;
+      <a href="https://github.com/EnderPico/bm1370-minimal-hash" rel="noopener noreferrer">View on GitHub</a>
+    </p>
+  </footer>
+
+</body>
+</html>

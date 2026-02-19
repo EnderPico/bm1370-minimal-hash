@@ -1,0 +1,11 @@
+---
+description: Standards for the BM1370 project site
+globs: "**/*.{html,css}"
+alwaysApply: true
+---
+# BM1370 Project Standards
+- Architecture: Strictly `docs/index.html` and `docs/css/style.css`.
+- HTML: Must use semantic HTML5 (`<header>`, `<main>`, `<section>`, `<footer>`).
+- CSS: Zero frameworks. Use CSS Grid for layout and Flexbox for alignment.
+- Aesthetic: "Professional Engineering Terminal" (Dark mode, monospace for code, clean sans-serif for body).
+- Accessibility: Ensure WCAG AA contrast and proper heading hierarchy (H1 -> H2 -> H3).
